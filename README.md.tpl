@@ -1,8 +1,8 @@
 # CDB64
 
-[![Build Status](https://travis-ci.org/bsm/dbx.png?branch=master)](https://travis-ci.org/bsm/dbx)
-[![GoDoc](https://godoc.org/github.com/bsm/dbx?status.png)](http://godoc.org/github.com/bsm/dbx)
-[![Go Report Card](https://goreportcard.com/badge/github.com/bsm/dbx)](https://goreportcard.com/report/github.com/bsm/dbx)
+[![Build Status](https://travis-ci.org/bsm/cdb64.png?branch=master)](https://travis-ci.org/bsm/cdb64)
+[![GoDoc](https://godoc.org/github.com/bsm/cdb64?status.png)](http://godoc.org/github.com/bsm/cdb64)
+[![Go Report Card](https://goreportcard.com/badge/github.com/bsm/cdb64)](https://goreportcard.com/report/github.com/bsm/cdb64)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 This is a native Go implementation of [cdb][1], a constant key/value database
