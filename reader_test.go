@@ -17,6 +17,8 @@ var _ = Describe("Reader", func() {
 	BeforeEach(func() {
 		w, err := cdb64.Create(testDir + "/test.cdb")
 		Expect(err).NotTo(HaveOccurred())
+		defer w.Close()
+
 		Expect(seedData(w, 1000)).To(Succeed())
 
 		// seed some more exotic entries
