@@ -2,6 +2,7 @@ package cdb64
 
 import (
 	"bufio"
+	"io"
 	"os"
 	"sync"
 )
@@ -12,7 +13,7 @@ import (
 // file will be invalid. Any errors during writing or finalizing are
 // unrecoverable.
 type Writer struct {
-	file    *os.File
+	writer  io.WriterAt
 	entries [256][]entry
 
 	buffer  *bufio.Writer
@@ -45,7 +46,7 @@ func Create(name string) (*Writer, error) {
 	}
 
 	return &Writer{
-		file:    f,
+		writer:  f,
 		buffer:  bufio.NewWriterSize(f, 65536),
 		offset:  headerSize,
 		scratch: t,
@@ -91,18 +92,35 @@ func (w *Writer) Close() error {
 	w.finalizeOnce.Do(func() {
 		err = w.finalize()
 	})
-	if e := w.file.Close(); e != nil {
-		err = e
+
+	if c, ok := w.writer.(io.Closer); ok {
+		if e := c.Close(); e != nil {
+			err = e
+		}
 	}
 	return err
 }
 
 // Freeze closes the writer, then opens it for reads.
 func (w *Writer) Freeze() (*Reader, error) {
-	if err := w.Close(); err != nil {
+	var err error
+	w.finalizeOnce.Do(func() {
+		err = w.finalize()
+	})
+	if err != nil {
 		return nil, err
 	}
-	return Open(w.file.Name())
+
+	switch x := w.writer.(type) {
+	case *os.File:
+		if err := w.Close(); err != nil {
+			return nil, err
+		}
+		return Open(x.Name())
+	case io.ReaderAt:
+		return NewReader(x)
+	}
+	return nil, os.ErrInvalid
 }
 
 func (w *Writer) finalize() error {
@@ -151,7 +169,7 @@ func (w *Writer) finalize() error {
 		binLE.PutUint64(w.scratch[off+8:off+16], uint64(table.length))
 	}
 
-	_, err := w.file.WriteAt(w.scratch, 0)
+	_, err := w.writer.WriteAt(w.scratch, 0)
 	return err
 }
 

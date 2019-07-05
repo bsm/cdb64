@@ -2,13 +2,14 @@ package cdb64
 
 import (
 	"bytes"
+	"io"
 	"os"
 )
 
 // Reader represents a thread-safe CDB database reader. To
 // create a database, use Writer.
 type Reader struct {
-	file   *os.File
+	reader io.ReaderAt
 	header header
 }
 
@@ -18,28 +19,33 @@ func Open(path string) (*Reader, error) {
 	if err != nil {
 		return nil, err
 	}
+	r, err := NewReader(f)
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return r, nil
+}
 
+// NewReader opens a new Reader.
+func NewReader(r io.ReaderAt) (*Reader, error) {
 	// read header
 	buf := make([]byte, headerSize)
-	if _, err := f.ReadAt(buf, 0); err != nil {
-		_ = f.Close()
+	if _, err := r.ReadAt(buf, 0); err != nil {
 		return nil, err
 	}
 
 	// parse header
-	var header header
+	var h header
 	for i := 0; i < 256; i++ {
 		off := i * 16
-		header[i] = table{
+		h[i] = table{
 			offset: int64(binLE.Uint64(buf[off : off+8])),
 			length: int(binLE.Uint64(buf[off+8 : off+16])),
 		}
 	}
 
-	return &Reader{
-		file:   f,
-		header: header,
-	}, nil
+	return &Reader{reader: r, header: h}, nil
 }
 
 // Get returns the value for a given key, or nil if it can't be found.
@@ -63,9 +69,12 @@ func (r *Reader) Iterator() *Iterator {
 	}
 }
 
-// Close closes the reader to further reads.
+// Close closes the underlying reader.
 func (r *Reader) Close() error {
-	return r.file.Close()
+	if c, ok := r.reader.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
 }
 
 func (r *Reader) find(key, buf []byte) ([]byte, []byte, error) {
@@ -124,7 +133,7 @@ func (r *Reader) valueAt(offset int64, key, buf []byte) ([]byte, []byte, error) 
 	} else {
 		buf = make([]byte, n)
 	}
-	if _, err := r.file.ReadAt(buf, offset+16); err != nil {
+	if _, err := r.reader.ReadAt(buf, offset+16); err != nil {
 		return nil, buf, err
 	}
 
@@ -138,7 +147,7 @@ func (r *Reader) valueAt(offset int64, key, buf []byte) ([]byte, []byte, error) 
 
 func (r *Reader) readTuple(offset int64) (uint64, uint64, error) {
 	buf := make([]byte, 16)
-	if _, err := r.file.ReadAt(buf, offset); err != nil {
+	if _, err := r.reader.ReadAt(buf, offset); err != nil {
 		return 0, 0, err
 	}
 	return binLE.Uint64(buf[:8]), binLE.Uint64(buf[8:]), nil

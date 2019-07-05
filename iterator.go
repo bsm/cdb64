@@ -31,7 +31,7 @@ func (it *Iterator) Next() bool {
 		it.buf = make([]byte, n)
 	}
 
-	_, err = it.reader.file.ReadAt(it.buf, it.off+16)
+	_, err = it.reader.reader.ReadAt(it.buf, it.off+16)
 	if err != nil {
 		it.err = err
 		return false
