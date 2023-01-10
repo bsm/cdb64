@@ -1,17 +1,6 @@
-default: vet test
+default: test
 
-test:
-	go test ./...
+.minimal.makefile:
+	curl -fsSL -o $@ https://gitlab.com/bsm/misc/raw/master/make/go/minimal.makefile
 
-vet:
-	go vet ./...
-
-staticcheck:
-	staticcheck ./...
-
-bench:
-	go test ./... -run=NONE -bench=. -benchmem
-
-# go get -u github.com/davelondon/rebecca/cmd/becca
-README.md: README.md.tpl $(wildcard *.go)
-	becca -package .
+include .minimal.makefile

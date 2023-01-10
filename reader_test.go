@@ -1,64 +1,150 @@
 package cdb64_test
 
 import (
-	"github.com/bsm/cdb64"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"bytes"
+	"os"
+	"reflect"
+	"testing"
+
+	. "github.com/bsm/cdb64"
 )
 
-var _ = Describe("Reader", func() {
-	var subject *cdb64.Reader
+func TestReader(t *testing.T) {
+	dir, err := os.MkdirTemp("", "cdb64_test")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	defer os.RemoveAll(dir)
 
-	get := func(key []byte) (string, error) {
-		val, err := subject.Get(key)
-		return string(val), err
+	// seed
+	w, err := Create(dir + "/test.cdb")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	defer w.Close()
+
+	if err := seedData(w, 1000); err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
 
-	BeforeEach(func() {
-		w, err := cdb64.Create(testDir + "/test.cdb")
-		Expect(err).NotTo(HaveOccurred())
-		defer w.Close()
+	// seed some more exotic entries
+	if err := w.Put(nil, []byte("blank")); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if err := w.Put([]byte("blank"), nil); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if err := w.Put([]byte("key-00000333"), []byte("duplicate")); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
-		Expect(seedData(w, 1000)).To(Succeed())
+	// open reader
+	r, err := w.Freeze()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	defer r.Close()
 
-		// seed some more exotic entries
-		Expect(w.Put(nil, []byte("blank"))).To(Succeed())
-		Expect(w.Put([]byte("blank"), nil)).To(Succeed())
-		Expect(w.Put([]byte("key-00000333"), []byte("duplicate"))).To(Succeed())
+	t.Run("Get", func(t *testing.T) {
+		if v, err := r.Get(nil); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		} else if exp := []byte("blank"); !bytes.Equal(v, exp) {
+			t.Errorf("expected %q, got %q", exp, v)
+		}
 
-		subject, err = w.Freeze()
-		Expect(err).NotTo(HaveOccurred())
+		if v, err := r.Get([]byte{}); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		} else if exp := []byte("blank"); !bytes.Equal(v, exp) {
+			t.Errorf("expected %q, got %q", exp, v)
+		}
+
+		if v, err := r.Get([]byte("missing")); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		} else if v != nil {
+			t.Errorf("expected %v, got %v", nil, v)
+		}
+
+		if v, err := r.Get([]byte("blank")); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		} else if exp := []byte{}; !bytes.Equal(v, exp) {
+			t.Errorf("expected %q, got %q", exp, v)
+		}
+
+		if v, err := r.Get([]byte("key-00000005")); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		} else if exp := []byte("val-00000005"); !bytes.Equal(v, exp) {
+			t.Errorf("expected %q, got %q", exp, v)
+		}
+
+		if v, err := r.Get([]byte("key-00000333")); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		} else if exp := []byte("val-00000333"); !bytes.Equal(v, exp) {
+			t.Errorf("expected %q, got %q", exp, v)
+		}
 	})
 
-	AfterEach(func() {
-		Expect(subject.Close()).To(Succeed())
+	t.Run("Batch", func(t *testing.T) {
+		b := r.Batch()
+
+		if v, err := b.Get([]byte("missing")); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		} else if v != nil {
+			t.Errorf("expected %v, got %v", nil, v)
+		}
+
+		var res2 []byte
+		if v, err := b.Get([]byte("key-00000005")); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		} else if exp := []byte("val-00000005"); !bytes.Equal(v, exp) {
+			t.Errorf("expected %q, got %q", exp, v)
+		} else {
+			res2 = v
+		}
+
+		if v, err := b.Get([]byte("key-00000333")); err != nil {
+			t.Errorf("expected no error, got %v", err)
+		} else if exp := []byte("val-00000333"); !bytes.Equal(v, exp) {
+			t.Errorf("expected %q, got %q", exp, v)
+		}
+
+		// res2 changes after 3rd call to Get
+		if exp := []byte("val-00000333"); !bytes.Equal(res2, exp) {
+			t.Errorf("expected %q, got %q", exp, res2)
+		}
 	})
 
-	It("should Get", func() {
-		Expect(subject.Get(nil)).To(Equal([]byte("blank")))
-		Expect(subject.Get([]byte{})).To(Equal([]byte("blank")))
-		Expect(subject.Get([]byte("missing"))).To(BeNil())
-		Expect(subject.Get([]byte("blank"))).To(Equal([]byte{}))
-		Expect(get([]byte("key-00000005"))).To(Equal("val-00000005"))
-		Expect(get([]byte("key-00000333"))).To(Equal("val-00000333"))
-	})
-
-	It("should iterate", func() {
-		iter := subject.Iterator()
+	t.Run("Iterator", func(t *testing.T) {
+		iter := r.Iterator()
 
 		var keys, vals []string
 		for iter.Next() {
 			keys = append(keys, string(iter.Key()))
 			vals = append(vals, string(iter.Value()))
 		}
-		Expect(len(keys)).To(Equal(1003))
-		Expect(len(vals)).To(Equal(1003))
+		if exp, got := 1003, len(keys); exp != got {
+			t.Errorf("expected %v, got %v", exp, got)
+		}
+		if exp, got := 1003, len(vals); exp != got {
+			t.Errorf("expected %v, got %v", exp, got)
+		}
 
-		Expect(keys[:3]).To(Equal([]string{"key-00000001", "key-00000003", "key-00000005"}))
-		Expect(vals[:3]).To(Equal([]string{"val-00000001", "val-00000003", "val-00000005"}))
-		Expect(keys[165:168]).To(Equal([]string{"key-00000331", "key-00000333", "key-00000335"}))
-		Expect(vals[165:168]).To(Equal([]string{"val-00000331", "val-00000333", "val-00000335"}))
-		Expect(keys[1000:]).To(Equal([]string{"", "blank", "key-00000333"}))
-		Expect(vals[1000:]).To(Equal([]string{"blank", "", "duplicate"}))
+		if exp, got := []string{"key-00000001", "key-00000003", "key-00000005"}, keys[:3]; !reflect.DeepEqual(exp, got) {
+			t.Errorf("expected %v, got %v", exp, got)
+		}
+		if exp, got := []string{"val-00000001", "val-00000003", "val-00000005"}, vals[:3]; !reflect.DeepEqual(exp, got) {
+			t.Errorf("expected %v, got %v", exp, got)
+		}
+		if exp, got := []string{"key-00000331", "key-00000333", "key-00000335"}, keys[165:168]; !reflect.DeepEqual(exp, got) {
+			t.Errorf("expected %v, got %v", exp, got)
+		}
+		if exp, got := []string{"val-00000331", "val-00000333", "val-00000335"}, vals[165:168]; !reflect.DeepEqual(exp, got) {
+			t.Errorf("expected %v, got %v", exp, got)
+		}
+		if exp, got := []string{"", "blank", "key-00000333"}, keys[1000:]; !reflect.DeepEqual(exp, got) {
+			t.Errorf("expected %v, got %v", exp, got)
+		}
+		if exp, got := []string{"blank", "", "duplicate"}, vals[1000:]; !reflect.DeepEqual(exp, got) {
+			t.Errorf("expected %v, got %v", exp, got)
+		}
 	})
-})
+}
