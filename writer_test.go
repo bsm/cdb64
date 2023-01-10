@@ -1,25 +1,26 @@
 package cdb64_test
 
 import (
-	"github.com/bsm/cdb64"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"os"
+	"testing"
+
+	. "github.com/bsm/cdb64"
 )
 
-var _ = Describe("Writer", func() {
-	var subject *cdb64.Writer
+func TestWriter(t *testing.T) {
+	dir, err := os.MkdirTemp("", "cdb64_test")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	defer os.RemoveAll(dir)
 
-	BeforeEach(func() {
-		w, err := cdb64.Create(testDir + "/test.cdb")
-		Expect(err).NotTo(HaveOccurred())
-		subject = w
-	})
+	w, err := Create(dir + "/test.cdb")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	defer w.Close()
 
-	AfterEach(func() {
-		Expect(subject.Close()).To(Succeed())
-	})
-
-	It("should PUT", func() {
-		Expect(seedData(subject, 1000)).To(Succeed())
-	})
-})
+	if err := seedData(w, 1000); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+}
